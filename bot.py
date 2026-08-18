@@ -1,13 +1,45 @@
 import os
+import sys
 import time
 import logging
+import subprocess
 import telebot
 from wb_parser import search_wildberries, extract_products, save_to_csv, format_products_text
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+
+def kill_previous_instances():
+    """Убить предыдущие копии этого скрипта."""
+    current_pid = os.getpid()
+    try:
+        result = subprocess.run(
+            ["tasklist", "/FI", "IMAGENAME eq python.exe", "/FO", "CSV"],
+            capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW
+        )
+        for line in result.stdout.strip().split("\n")[1:]:
+            parts = line.split(",")
+            if len(parts) >= 2:
+                pid = int(parts[1].strip('"'))
+                if pid != current_pid:
+                    try:
+                        os.kill(pid, 9)
+                        log.info(f"Killed old bot instance (PID {pid})")
+                    except OSError:
+                        pass
+    except Exception:
+        pass
+
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[
+        logging.FileHandler("bot.log", encoding="utf-8"),
+        logging.StreamHandler()
+    ]
+)
 log = logging.getLogger(__name__)
 
-BOT_TOKEN = "8881039420:AAGsJqPAu0jJOGVpvy7WbwCfZ2Vf9zm_9C8"
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "8881039420:AAGsJqPAu0jJOGVpvy7WbwCfZ2Vf9zm_9C8")
 
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode=None)
 
@@ -54,6 +86,8 @@ def search(message):
     if not query:
         return
 
+    log.info(f"Search request: {query}")
+
     try:
         bot.send_message(message.chat.id, "Поиск на Wildberries...")
     except Exception:
@@ -63,6 +97,7 @@ def search(message):
     try:
         data = search_wildberries(query)
         products = extract_products(data)
+        log.info(f"Found {len(products)} products for '{query}'")
 
         if not products:
             bot.send_message(message.chat.id, "Товары не найдены.")
@@ -92,6 +127,7 @@ def search(message):
 
 
 if __name__ == "__main__":
+    kill_previous_instances()
     log.info("Telegram-бот запущен!")
     while True:
         try:
